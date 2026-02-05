@@ -18,6 +18,11 @@ st.set_page_config(
 st.title("Solicitação de placas")
 
 # ===============================
+# CONSTANTES
+# ===============================
+LIMITE_PRODUTOS = 23  # Limite máximo de produtos permitidos
+
+# ===============================
 # SESSION STATE
 # ===============================
 if "workbook" not in st.session_state:
@@ -67,7 +72,7 @@ TAMANHO_PLACA_MAP = {
 
 TAMANHO_PLACA_IMAGEM_MAP = {
     "A - FOLHA HORIZONTAL": "imagens/HORIZONTAL.png",
-    "B - FOLHA RETRATO": "imagens/VERTICAL.png",
+    "B - FOLHA VERTICAL": "imagens/VERTICAL.png",
     "C - MEIA FOLHA": "imagens/MEIA_FOLHA.jpg",
     "D - 1/4 FOLHA": "imagens/UM_QUARTO_FOLHA.jpg",
     "E - PORTA ETIQUETA": "imagens/ETIQUETA_GONDOLA.JFIF"
@@ -91,8 +96,8 @@ def criar_planilha_from_scratch():
     ws["D7"].value = f"DATA: {st.session_state.data_solicitacao}"
     ws["B9"].value = f"SOLICITANTE: {st.session_state.nome_solicitante}"
     
-    # Preencher produtos
-    for i, produto in enumerate(st.session_state.produtos):
+    # Preencher produtos (máximo LIMITE_PRODUTOS)
+    for i, produto in enumerate(st.session_state.produtos[:LIMITE_PRODUTOS]):
         linha = 16 + i
         ws.cell(row=linha, column=2).value = produto["Tipo Placa"]  # Coluna B
         ws.cell(row=linha, column=3).value = produto["Tamanho Placa"]  # Coluna C
@@ -110,6 +115,16 @@ def criar_planilha_from_scratch():
     st.session_state.excel_buffer = buffer
     
     return buffer
+
+def verificar_limite_produtos():
+    """Verifica se atingiu o limite de produtos e retorna mensagem se necessário"""
+    quantidade_atual = len(st.session_state.produtos)
+    
+    if quantidade_atual >= LIMITE_PRODUTOS:
+        produtos_excedentes = quantidade_atual - LIMITE_PRODUTOS
+        return f"⚠️ LIMITE ATINGIDO! O formulário suporta apenas {LIMITE_PRODUTOS} produtos. Você já tem {quantidade_atual} produtos ({produtos_excedentes} excedentes)."
+    
+    return None
 
 # ===============================
 # ABAS
@@ -129,6 +144,13 @@ with tab_individual:
 
     with col2:
         loja = st.selectbox("Loja", ["MIMI", "KAMI", "TOTAL MIX"])
+
+    # Exibir contador de produtos atual
+    quantidade_atual = len(st.session_state.produtos)
+    st.info(f"📊 **Produtos solicitados:** {quantidade_atual}/{LIMITE_PRODUTOS}")
+    
+    if quantidade_atual >= LIMITE_PRODUTOS:
+        st.warning(f"🚫 **LIMITE ATINGIDO!** Você já atingiu o limite máximo de {LIMITE_PRODUTOS} produtos.")
 
     # Botão para iniciar solicitação
     if st.button("Iniciar solicitação", key="iniciar_individual"):
@@ -201,6 +223,9 @@ with tab_individual:
         elif any(p["Código de Barras"] == str(codigo_barras) for p in st.session_state.produtos):
             st.error("❌ PRODUTO JÁ SOLICITADO. POR FAVOR, COLOQUE OUTRO CÓDIGO DE BARRAS.")
             st.session_state.mensagem_produto = None
+        elif len(st.session_state.produtos) >= LIMITE_PRODUTOS:
+            st.error(f"🚫 LIMITE ATINGIDO! O formulário suporta apenas {LIMITE_PRODUTOS} produtos. Não é possível adicionar mais produtos.")
+            st.session_state.mensagem_produto = None
         else:
             headers = {
                 'x-api-key': st.secrets["api"]["x_api_key"],
@@ -252,11 +277,19 @@ with tab_individual:
 
                     st.session_state.produtos.append(produto_info)
                     
+                    # Verificar limite após adicionar
+                    limite_msg = verificar_limite_produtos()
+                    if limite_msg:
+                        st.warning(limite_msg)
+                    
                     # Recriar a planilha do zero
                     criar_planilha_from_scratch()
                     
                     # Atualizar mensagem
-                    st.session_state.mensagem_produto = "✅ Produto registrado corretamente!"
+                    if len(st.session_state.produtos) <= LIMITE_PRODUTOS:
+                        st.session_state.mensagem_produto = "✅ Produto registrado corretamente!"
+                    else:
+                        st.session_state.mensagem_produto = f"⚠️ Produto registrado, mas ATENÇÃO: limite de {LIMITE_PRODUTOS} produtos excedido!"
                     
                     # Forçar rerun para atualizar a lista
                     st.rerun()
@@ -320,9 +353,16 @@ with tab_lote:
             st.warning(f"Imagem não encontrada: {imagem_path_lote}")
             st.info("Verifique se o arquivo existe na pasta 'imagens/'")
 
-    # Container para mensagens do lote
-    mensagem_lote_container = st.empty()
+    # Exibir contador atual
+    quantidade_atual = len(st.session_state.produtos)
+    espaco_disponivel = max(0, LIMITE_PRODUTOS - quantidade_atual)
+    st.info(f"📊 **Produtos solicitados:** {quantidade_atual}/{LIMITE_PRODUTOS} | **Espaço disponível:** {espaco_disponivel}")
     
+    if quantidade_atual >= LIMITE_PRODUTOS:
+        st.warning(f"🚫 **LIMITE ATINGIDO!** Você já atingiu o limite máximo de {LIMITE_PRODUTOS} produtos.")
+    elif espaco_disponivel < 10:
+        st.warning(f"⚠️ **ATENÇÃO:** Apenas {espaco_disponivel} espaços disponíveis no formulário.")
+
     # Botão para processar lote
     if st.button("Processar lote", key="processar_lote"):
         if not st.session_state.workbook:
@@ -331,32 +371,47 @@ with tab_lote:
         elif not arquivo_lote:
             st.warning("⚠️ Faça upload de um arquivo válido.")
             st.session_state.mensagem_lote = None
+        elif quantidade_atual >= LIMITE_PRODUTOS:
+            st.error(f"🚫 LIMITE ATINGIDO! O formulário já está com {LIMITE_PRODUTOS} produtos. Não é possível processar mais produtos.")
+            st.session_state.mensagem_lote = None
         else:
             try:
                 df_lote = pd.read_excel(arquivo_lote)
                 codigos = df_lote["CODIGO DE BARRAS"].astype(str).tolist()
+                
+                # Verificar quantos produtos podem ser adicionados
+                espaco_disponivel = LIMITE_PRODUTOS - quantidade_atual
+                codigos_para_processar = codigos[:espaco_disponivel]
+                codigos_excedentes = codigos[espaco_disponivel:] if len(codigos) > espaco_disponivel else []
+                
+                # Aviso sobre produtos excedentes
+                if codigos_excedentes:
+                    st.warning(f"⚠️ **ATENÇÃO:** O arquivo contém {len(codigos)} produtos, mas apenas {espaco_disponivel} serão processados devido ao limite do formulário.")
+                    st.info(f"📋 {len(codigos_excedentes)} produtos serão ignorados por falta de espaço.")
 
                 produtos_sucesso = []
                 produtos_falha = []
+                produtos_duplicados = []
 
                 # Criar barra de progresso
                 progress_bar = st.progress(0)
                 status_text = st.empty()
-                total = len(codigos)
+                total_processar = len(codigos_para_processar)
 
                 headers = {
                     'x-api-key': st.secrets["api"]["x_api_key"],
                     'Cookie': st.secrets["api"]["cookie"]
                 }
 
-                for i, codigo in enumerate(codigos, start=1):
+                for i, codigo in enumerate(codigos_para_processar, start=1):
                     time.sleep(0.05)
-                    progresso = i / total
+                    progresso = i / total_processar
                     progress_bar.progress(progresso)
-                    status_text.text(f"Processando {i} de {total} produtos...")
+                    status_text.text(f"Processando {i} de {total_processar} produtos...")
 
+                    # Verificar duplicado
                     if any(p["Código de Barras"] == codigo for p in st.session_state.produtos):
-                        produtos_falha.append({"Código de Barras": codigo, "Erro": "Duplicado"})
+                        produtos_duplicados.append({"Código de Barras": codigo, "Erro": "Duplicado"})
                         continue
 
                     url_1 = f"https://lojasmimi.varejofacil.com/api/v1/produto/produtos/consulta/0{codigo}"
@@ -405,17 +460,45 @@ with tab_lote:
                 # Recriar a planilha do zero após processar todos os produtos
                 criar_planilha_from_scratch()
 
-                # Criar mensagem de sucesso
-                mensagem_sucesso = f"✅ Lote processado com sucesso! {len(produtos_sucesso)} produtos adicionados, {len(produtos_falha)} falharam."
-                st.session_state.mensagem_lote = mensagem_sucesso
+                # Criar mensagem de sucesso detalhada
+                mensagem_detalhada = f"✅ Lote processado com sucesso!\n\n"
+                mensagem_detalhada += f"📊 **Resumo:**\n"
+                mensagem_detalhada += f"- ✅ Produtos adicionados: {len(produtos_sucesso)}\n"
+                mensagem_detalhada += f"- ❌ Produtos não encontrados: {len(produtos_falha)}\n"
+                mensagem_detalhada += f"- ⚠️ Produtos duplicados: {len(produtos_duplicados)}\n"
+                
+                if codigos_excedentes:
+                    mensagem_detalhada += f"- 🚫 Produtos excedentes (não processados): {len(codigos_excedentes)}\n"
+                
+                mensagem_detalhada += f"\n📈 **Total no formulário:** {len(st.session_state.produtos)}/{LIMITE_PRODUTOS}"
+                
+                st.session_state.mensagem_lote = mensagem_detalhada
                 
                 # Exibir mensagem imediatamente
-                st.success(mensagem_sucesso)
+                st.success("✅ Lote processado com sucesso!")
+                st.markdown(mensagem_detalhada)
 
+                # Mostrar produtos que falharam
                 if produtos_falha:
-                    st.markdown("### ❌ Produtos que falharam")
+                    st.markdown("### ❌ Produtos não encontrados")
                     df_falha = pd.DataFrame(produtos_falha)
                     st.dataframe(df_falha, use_container_width=True)
+                
+                # Mostrar produtos duplicados
+                if produtos_duplicados:
+                    st.markdown("### ⚠️ Produtos duplicados (já existentes)")
+                    df_duplicados = pd.DataFrame(produtos_duplicados)
+                    st.dataframe(df_duplicados, use_container_width=True)
+                
+                # Mostrar produtos excedentes
+                if codigos_excedentes:
+                    st.markdown("### 🚫 Produtos excedentes (não processados por limite)")
+                    df_excedentes = pd.DataFrame({
+                        "Código de Barras": codigos_excedentes,
+                        "Motivo": f"Limite de {LIMITE_PRODUTOS} produtos atingido"
+                    })
+                    st.dataframe(df_excedentes, use_container_width=True)
+                    st.info(f"⚠️ **Recomendação:** Processe os {len(codigos_excedentes)} produtos restantes em um novo lote após limpar o formulário.")
                     
                 # Forçar rerun para atualizar
                 st.rerun()
@@ -426,25 +509,47 @@ with tab_lote:
 
     # Exibir mensagem do lote se existir (para quando a página recarrega)
     if st.session_state.mensagem_lote:
-        st.success(st.session_state.mensagem_lote)
+        st.success("✅ Lote processado anteriormente")
+        st.markdown(st.session_state.mensagem_lote)
 
 # ======================================================
 # ABA RELATÓRIO
 # ======================================================
 with tab_relatorio:
     st.subheader("Produtos solicitados")
+    
+    # Mostrar contador
+    quantidade_atual = len(st.session_state.produtos)
+    st.info(f"📊 **Total de produtos:** {quantidade_atual}/{LIMITE_PRODUTOS}")
+    
+    if quantidade_atual > LIMITE_PRODUTOS:
+        st.error(f"🚫 **ATENÇÃO:** O formulário tem {quantidade_atual} produtos, mas suporta apenas {LIMITE_PRODUTOS}. "
+                f"Os primeiros {LIMITE_PRODUTOS} serão incluídos na planilha.")
 
     if st.session_state.produtos:
-        df = pd.DataFrame(st.session_state.produtos)
+        # Mostrar apenas os produtos que cabem no formulário
+        produtos_para_exibir = st.session_state.produtos[:LIMITE_PRODUTOS]
+        produtos_excedentes = st.session_state.produtos[LIMITE_PRODUTOS:] if quantidade_atual > LIMITE_PRODUTOS else []
+        
+        df = pd.DataFrame(produtos_para_exibir)
         st.dataframe(df, use_container_width=True)
+        
+        # Mostrar alerta sobre produtos excedentes
+        if produtos_excedentes:
+            st.warning(f"⚠️ **ATENÇÃO:** {len(produtos_excedentes)} produtos excedem o limite do formulário e NÃO serão incluídos na planilha:")
+            df_excedentes = pd.DataFrame(produtos_excedentes)
+            st.dataframe(df_excedentes, use_container_width=True)
+            st.error(f"🚫 **Ação necessária:** Remova {len(produtos_excedentes)} produtos para não perder informações.")
 
         st.markdown("---")
         st.subheader("🗑️ Remover produto")
 
-        options = [
-            f'{p["Código de Barras"]} - {p["Descrição"][:50]}...' if len(p["Descrição"]) > 50 else f'{p["Código de Barras"]} - {p["Descrição"]}'
-            for p in st.session_state.produtos
-        ]
+        # Criar opções para remoção (incluindo produtos excedentes)
+        options = []
+        for i, p in enumerate(st.session_state.produtos):
+            descricao_curta = p["Descrição"][:50] + "..." if len(p["Descrição"]) > 50 else p["Descrição"]
+            marcador = "🚫 " if i >= LIMITE_PRODUTOS else ""
+            options.append(f'{marcador}{p["Código de Barras"]} - {descricao_curta}')
 
         remover = st.selectbox("Selecione o produto para remover", options, key="remover_produto")
 
@@ -459,7 +564,11 @@ with tab_relatorio:
             criar_planilha_from_scratch()
 
             # Exibir mensagem de sucesso
-            st.success(f"🗑️ Produto '{produto_removido['Descrição'][:30]}...' removido com sucesso.")
+            mensagem_remocao = f"🗑️ Produto '{produto_removido['Descrição'][:30]}...' removido com sucesso."
+            if len(st.session_state.produtos) < LIMITE_PRODUTOS:
+                mensagem_remocao += f" Agora há {LIMITE_PRODUTOS - len(st.session_state.produtos)} espaços disponíveis."
+            
+            st.success(mensagem_remocao)
             
             # Forçar rerun para atualizar a lista
             st.rerun()
@@ -467,6 +576,13 @@ with tab_relatorio:
         st.markdown("---")
         
         if st.session_state.excel_buffer:
+            # Informar quantos produtos serão incluídos
+            produtos_incluidos = min(len(st.session_state.produtos), LIMITE_PRODUTOS)
+            st.info(f"📄 **Na planilha serão incluídos:** {produtos_incluidos} produtos")
+            
+            if len(st.session_state.produtos) > LIMITE_PRODUTOS:
+                st.warning(f"⚠️ **Atenção:** Apenas os primeiros {LIMITE_PRODUTOS} produtos serão incluídos na planilha.")
+            
             st.download_button(
                 "📥 Baixar formulário Excel",
                 data=st.session_state.excel_buffer,
