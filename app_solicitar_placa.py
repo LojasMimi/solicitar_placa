@@ -72,10 +72,10 @@ TAMANHO_PLACA_MAP = {
 
 TAMANHO_PLACA_IMAGEM_MAP = {
     "A - FOLHA HORIZONTAL": "imagens/HORIZONTAL.png",
-    "B - FOLHA VERTICAL": "imagens/VERTICAL.png",
+    "B - FOLHA RETRATO": "imagens/VERTICAL.png",
     "C - MEIA FOLHA": "imagens/MEIA_FOLHA.jpg",
     "D - 1/4 FOLHA": "imagens/UM_QUARTO_FOLHA.jpg",
-    "E - PORTA ETIQUETA": "imagens/ETIQUETA_GONDOLA.jfif"
+    "E - PORTA ETIQUETA": "imagens/ETIQUETA_GONDOLA.JFIF"
 }
 
 # ===============================
@@ -308,8 +308,21 @@ with tab_individual:
 # ======================================================
 with tab_lote:
     st.subheader("Solicitação em Lote")
+    
+    # Texto explicativo adicionado
+    st.markdown("""
+    <div style='background-color: #000000; padding: 15px; border-radius: 10px; margin-bottom: 20px;'>
+    <h4 style='color: #1f77b4; margin-top: 0;'>📋 Como funciona o modo LOTE:</h4>
+    <p style='margin-bottom: 10px;'>
+    Este modo é ideal para quando você precisa solicitar placas para <strong>múltiplos produtos que compartilham o mesmo tipo de placa e tamanho</strong>.
+    </p>
+    <p style='margin-bottom: 0;'>
+    <strong>Exemplo de uso:</strong> Promoção de 15 produtos com "Tipo: OFERTA" e "Tamanho: MEIA FOLHA".
+    </p>
+    </div>
+    """, unsafe_allow_html=True)
 
-    st.markdown("📥 Baixe o modelo, preencha apenas os códigos de barras e faça upload.")
+    st.markdown("📥 **Passo 1:** Baixe o modelo, preencha apenas os códigos de barras e faça upload.")
 
     if st.button("Baixar modelo Excel", key="baixar_modelo"):
         modelo = Workbook()
@@ -330,8 +343,14 @@ with tab_lote:
         )
 
     st.markdown("---")
+    
+    st.markdown("📤 **Passo 2:** Faça upload do arquivo Excel preenchido com os códigos de barras.")
 
-    arquivo_lote = st.file_uploader("Faça upload do arquivo Excel preenchido", type=["xlsx"], key="upload_lote")
+    arquivo_lote = st.file_uploader("Selecione o arquivo Excel", type=["xlsx"], key="upload_lote")
+
+    st.markdown("---")
+    
+    st.markdown("⚙️ **Passo 3:** Selecione o tipo e tamanho da placa que será aplicado a TODOS os produtos do lote.")
 
     col_lote1, col_lote2 = st.columns(2)
     
@@ -363,8 +382,12 @@ with tab_lote:
     elif espaco_disponivel < 10:
         st.warning(f"⚠️ **ATENÇÃO:** Apenas {espaco_disponivel} espaços disponíveis no formulário.")
 
+    st.markdown("---")
+    
+    st.markdown("🚀 **Passo 4:** Clique no botão abaixo para processar todos os produtos de uma única vez.")
+
     # Botão para processar lote
-    if st.button("Processar lote", key="processar_lote"):
+    if st.button("▶️ PROCESSAR LOTE COMPLETO", key="processar_lote", type="primary"):
         if not st.session_state.workbook:
             st.error("❌ Inicie a solicitação na aba INDIVIDUAL antes de processar o lote.")
             st.session_state.mensagem_lote = None
