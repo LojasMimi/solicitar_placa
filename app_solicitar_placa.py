@@ -75,7 +75,7 @@ TAMANHO_PLACA_IMAGEM_MAP = {
     "B - FOLHA VERTICAL": "imagens/VERTICAL.png",
     "C - MEIA FOLHA": "imagens/MEIA_FOLHA.jpg",
     "D - 1/4 FOLHA": "imagens/UM_QUARTO_FOLHA.jpg",
-    "E - PORTA ETIQUETA": "imagens/ETIQUETA_GONDOLA.JFIF"
+    "E - PORTA ETIQUETA": "imagens/ETIQUETA_GONDOLA.jfif"
 }
 
 # ===============================
